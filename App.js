@@ -5,12 +5,13 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  Alert
+  Alert,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { calculateProject } from "./utils/calculations";
 import { formatCOP, percent } from "./utils/formatters";
 import { buildCtvHtml, buildStudyHtml, exportPdf } from "./utils/pdfExport";
+import { municipalitiesByDepartment } from "./data/municipalities";
 import FormScreen from "./screens/FormScreen";
 import CtvScreen from "./screens/CtvScreen";
 import StudyScreen from "./screens/StudyScreen";
@@ -24,7 +25,7 @@ const manualZones = ["", "Z1", "Z2", "Z2G", "Z3"];
 const CREATOR = {
   name: "Arq. Pedro Cesar Prada Garcia",
   whatsapp: "3114730319",
-  email: "ppedrocgarcia@hotmail.com"
+  email: "ppedrocgarcia@hotmail.com",
 };
 
 const ALL_DEPARTMENTS = [
@@ -60,7 +61,7 @@ const ALL_DEPARTMENTS = [
   "Tolima",
   "Valle del Cauca",
   "Vaupés",
-  "Vichada"
+  "Vichada",
 ];
 
 const INITIAL_FORM = {
@@ -77,12 +78,24 @@ const INITIAL_FORM = {
   fvCoverage: "0",
   logisticApplies: "No",
   manualZone: "",
-  valueCap: ""
+  valueCap: "",
+  studyMode: "automatico",
+  eydInterventoriaMode: "automatico",
+  eydInterventoriaManual: "",
+  obraInterventoriaMode: "automatico",
+  obraInterventoriaManual: "",
+};
+
+const INITIAL_SEGMENT = {
+  mode: "Mular",
+  distance: "30",
+  calculationMode: "automatico_pct",
+  unitValue: "",
 };
 
 function normalizeTypology(typology) {
   if (typology === "Hospital Nivel I" || typology === "Hospital Nivel II") {
-    return "Hospital mediana complejidad (I–II)";
+    return "Hospital mediana complejidad (I-II)";
   }
   if (typology === "Hospital Nivel III") {
     return "Hospital alta complejidad (III)";
@@ -94,10 +107,13 @@ export default function App() {
   const [view, setView] = useState("inicio");
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [form, setForm] = useState(INITIAL_FORM);
-  const [segments, setSegments] = useState([{ mode: "Mular", distance: "30" }]);
+  const [segments, setSegments] = useState([{ ...INITIAL_SEGMENT }]);
   const [projects, setProjects] = useState([]);
   const [departmentModalVisible, setDepartmentModalVisible] = useState(false);
   const [departmentSearch, setDepartmentSearch] = useState("");
+  const [municipalityModalVisible, setMunicipalityModalVisible] =
+    useState(false);
+  const [municipalitySearch, setMunicipalitySearch] = useState("");
 
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loggedUser, setLoggedUser] = useState("");
@@ -106,7 +122,7 @@ export default function App() {
   const normalizedForm = useMemo(
     () => ({
       ...form,
-      typology: normalizeTypology(form.typology)
+      typology: normalizeTypology(form.typology),
     }),
     [form]
   );
@@ -129,13 +145,16 @@ export default function App() {
 
   useEffect(() => {
     if (form.logisticApplies !== "Sí") {
-      setSegments([{ mode: "Mular", distance: "30" }]);
+      setSegments([{ ...INITIAL_SEGMENT }]);
     }
   }, [form.logisticApplies]);
 
   useEffect(() => {
     if (form.fvType === "No aplica" && form.fvCoverage !== "0") {
-      setForm((prev) => ({ ...prev, fvCoverage: "0" }));
+      setForm((prev) => ({
+        ...prev,
+        fvCoverage: "0",
+      }));
     }
   }, [form.fvType]);
 
@@ -178,31 +197,33 @@ export default function App() {
   };
 
   const handleLogout = async () => {
-    Alert.alert(
-      "Cerrar sesión",
-      "¿Desea cerrar la sesión actual?",
-      [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Cerrar sesión",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await AsyncStorage.removeItem(SESSION_KEY);
-              setLoggedUser("");
-              setIsAuthenticated(false);
-            } catch (error) {
-              console.log("Error cerrando sesión:", error);
-              Alert.alert("Aviso", "No fue posible cerrar sesión.");
-            }
+    Alert.alert("Cerrar sesión", "¿Desea cerrar la sesión actual?", [
+      { text: "Cancelar", style: "cancel" },
+      {
+        text: "Cerrar sesión",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await AsyncStorage.removeItem(SESSION_KEY);
+            setLoggedUser("");
+            setIsAuthenticated(false);
+          } catch (error) {
+            console.log("Error cerrando sesión:", error);
+            Alert.alert("Aviso", "No fue posible cerrar sesión.");
           }
-        }
-      ]
-    );
+        },
+      },
+    ]);
   };
 
   const filteredDepartments = ALL_DEPARTMENTS.filter((dep) =>
     dep.toLowerCase().includes(departmentSearch.toLowerCase())
+  );
+
+  const filteredMunicipalities = (
+    municipalitiesByDepartment[form.department] || []
+  ).filter((municipality) =>
+    municipality.toLowerCase().includes(municipalitySearch.toLowerCase())
   );
 
   const toNumber = (value) => {
@@ -210,10 +231,24 @@ export default function App() {
     return Number.isFinite(parsed) ? parsed : 0;
   };
 
+  const toPercentNumber = (value) => {
+    const normalized = String(value ?? "")
+      .replace(",", ".")
+      .trim();
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
   const numericArea = toNumber(form.area);
   const numericUrbanArea = toNumber(form.urbanArea);
   const numericInfraArea = toNumber(form.infraArea);
   const numericFvCoverage = toNumber(form.fvCoverage);
+  const numericEydInterventoriaManual = toPercentNumber(
+    form.eydInterventoriaManual
+  );
+  const numericObraInterventoriaManual = toPercentNumber(
+    form.obraInterventoriaManual
+  );
 
   const formErrors = [];
 
@@ -242,11 +277,15 @@ export default function App() {
   }
 
   if (numericInfraArea < 0) {
-    formErrors.push("El área de infraestructura complementaria no puede ser negativa.");
+    formErrors.push(
+      "El área de infraestructura complementaria no puede ser negativa."
+    );
   }
 
   if (form.infraType === "No aplica" && numericInfraArea > 0) {
-    formErrors.push("Si la infraestructura complementaria no aplica, el área debe ser 0.");
+    formErrors.push(
+      "Si la infraestructura complementaria no aplica, el área debe ser 0."
+    );
   }
 
   if (form.fvType !== "No aplica") {
@@ -259,17 +298,74 @@ export default function App() {
   }
 
   if (form.fvType === "No aplica" && numericFvCoverage > 0) {
-    formErrors.push("Si el sistema fotovoltaico no aplica, la cobertura debe ser 0.");
+    formErrors.push(
+      "Si el sistema fotovoltaico no aplica, la cobertura debe ser 0."
+    );
+  }
+
+  if (form.eydInterventoriaMode === "manual") {
+    if (!form.eydInterventoriaManual.trim()) {
+      formErrors.push(
+        "Debe ingresar el porcentaje manual de interventoría de estudios y diseños."
+      );
+    } else if (
+      numericEydInterventoriaManual < 4 ||
+      numericEydInterventoriaManual > 7.5
+    ) {
+      formErrors.push(
+        "La interventoría de estudios y diseños manual debe estar entre 4.0% y 7.5%."
+      );
+    }
+  }
+
+  if (form.obraInterventoriaMode === "manual") {
+    if (!form.obraInterventoriaManual.trim()) {
+      formErrors.push(
+        "Debe ingresar el porcentaje manual de interventoría de obra."
+      );
+    } else if (
+      numericObraInterventoriaManual < 4 ||
+      numericObraInterventoriaManual > 7.5
+    ) {
+      formErrors.push(
+        "La interventoría de obra manual debe estar entre 4.0% y 7.5%."
+      );
+    }
   }
 
   if (form.logisticApplies === "Sí") {
     segments.forEach((seg, index) => {
       const distance = toNumber(seg.distance);
+      const unitValue = toNumber(seg.unitValue);
+
       if (!seg.mode) {
-        formErrors.push(`Debe seleccionar la modalidad del tramo ${index + 1}.`);
+        formErrors.push(
+          `Debe seleccionar la modalidad del tramo ${index + 1}.`
+        );
       }
-      if (distance <= 0) {
-        formErrors.push(`La distancia del tramo ${index + 1} debe ser mayor que cero.`);
+
+      if (seg.mode === "Marítimo" && seg.calculationMode === "automatico_pct") {
+        formErrors.push(
+          `El tramo ${
+            index + 1
+          } marítimo no puede calcularse automáticamente por porcentaje. Debe usar valor por tonelada-km o valor por tonelada-ruta.`
+        );
+      }
+
+      if (seg.calculationMode !== "vr_ton_ruta" && distance <= 0) {
+        formErrors.push(
+          `La distancia del tramo ${index + 1} debe ser mayor que cero.`
+        );
+      }
+
+      if (
+        (seg.calculationMode === "vr_ton_km" ||
+          seg.calculationMode === "vr_ton_ruta") &&
+        unitValue <= 0
+      ) {
+        formErrors.push(
+          `Debe ingresar el valor unitario del tramo ${index + 1}.`
+        );
       }
     });
   }
@@ -323,8 +419,8 @@ export default function App() {
               console.log("Error borrando historial:", error);
               Alert.alert("Aviso", "No fue posible eliminar el historial.");
             }
-          }
-        }
+          },
+        },
       ]
     );
   };
@@ -345,13 +441,16 @@ export default function App() {
               );
 
               setProjects(nextProjects);
-              await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(nextProjects));
+              await AsyncStorage.setItem(
+                STORAGE_KEY,
+                JSON.stringify(nextProjects)
+              );
             } catch (error) {
               console.log("Error eliminando proyecto:", error);
               Alert.alert("Aviso", "No fue posible eliminar el proyecto.");
             }
-          }
-        }
+          },
+        },
       ]
     );
   };
@@ -363,7 +462,15 @@ export default function App() {
   };
 
   const addSegment = () => {
-    setSegments((prev) => [...prev, { mode: "Marítimo", distance: "0" }]);
+    setSegments((prev) => [
+      ...prev,
+      {
+        mode: "Marítimo",
+        distance: "0",
+        calculationMode: "vr_ton_km",
+        unitValue: "",
+      },
+    ]);
   };
 
   const removeSegment = (index) => {
@@ -406,13 +513,13 @@ export default function App() {
       scenarioLabel,
       form: {
         ...form,
-        typology: normalizeTypology(form.typology)
+        typology: normalizeTypology(form.typology),
       },
       segments: segments.map((s) => ({ ...s })),
       calc: { ...calc },
       finalCalc: { ...finalCalc },
       createdAt: new Date().toISOString(),
-      savedBy: loggedUser || "usuario"
+      savedBy: loggedUser || "usuario",
     };
 
     const nextProjects = [saved, ...projects];
@@ -434,16 +541,28 @@ export default function App() {
     setForm({
       ...project.form,
       typology: normalizedTypology,
-      valueCap: project.form.valueCap ?? ""
+      valueCap: project.form.valueCap ?? "",
+      studyMode: project.form.studyMode ?? "automatico",
+      eydInterventoriaMode: project.form.eydInterventoriaMode ?? "automatico",
+      eydInterventoriaManual: project.form.eydInterventoriaManual ?? "",
+      obraInterventoriaMode: project.form.obraInterventoriaMode ?? "automatico",
+      obraInterventoriaManual: project.form.obraInterventoriaManual ?? "",
     });
 
-    setSegments(project.segments.map((s) => ({ ...s })));
+    setSegments(
+      project.segments.map((s) => ({
+        mode: s.mode ?? "Mular",
+        distance: s.distance ?? "0",
+        calculationMode: s.calculationMode ?? "automatico_pct",
+        unitValue: s.unitValue ?? "",
+      }))
+    );
     setView("ctv");
   };
 
   const resetForm = () => {
     setForm(INITIAL_FORM);
-    setSegments([{ mode: "Mular", distance: "30" }]);
+    setSegments([{ ...INITIAL_SEGMENT }]);
     setView("inicio");
   };
 
@@ -473,15 +592,38 @@ export default function App() {
     }
 
     const tramoTexto = activeCalc.segmentResults
-      .map(
-        (seg, index) =>
-          `Tramo ${index + 1}: modalidad ${seg.mode}, distancia ${seg.distance} km, con una incidencia equivalente al ${percent(seg.pct)}`
-      )
+      .map((seg, index) => {
+        if (seg.calculationMode === "vr_ton_km") {
+          return `Tramo ${index + 1}: modalidad ${seg.mode}, distancia ${
+            seg.distance
+          } km, calculado por valor tonelada-km, con un costo estimado de ${formatCOP(
+            seg.cost
+          )}`;
+        }
+
+        if (seg.calculationMode === "vr_ton_ruta") {
+          return `Tramo ${index + 1}: modalidad ${
+            seg.mode
+          }, calculado por valor tonelada-ruta, con un costo estimado de ${formatCOP(
+            seg.cost
+          )}`;
+        }
+
+        return `Tramo ${index + 1}: modalidad ${seg.mode}, distancia ${
+          seg.distance
+        } km, con una incidencia equivalente al ${percent(seg.pct)}`;
+      })
       .join(". ");
 
     const areaProyecto = Number(activeCalc?.area || activeForm?.area || 0);
 
-    return `El sobrecosto logístico se calculó por tramos de transporte, aplicando para cada recorrido el coeficiente correspondiente a su modalidad y distancia. ${tramoTexto}. La sumatoria de los tramos genera un porcentaje logístico total de ${percent(activeCalc.logisticPct)}, aplicado sobre el componente constructivo correspondiente al escenario final analizado, con un área de proyecto de ${areaProyecto.toLocaleString("es-CO")} m², para un valor estimado de ${formatCOP(activeCalc.logisticCost)}.${hasOptimization ? " La presente descripción incorpora el escenario optimizado final del proyecto." : ""}`;
+    return `El sobrecosto logístico se calculó por tramos de transporte, aplicando para cada recorrido el criterio correspondiente a su modalidad. ${tramoTexto}. El costo logístico total estimado para el escenario final analizado, con un área de proyecto de ${areaProyecto.toLocaleString(
+      "es-CO"
+    )} m², asciende a ${formatCOP(activeCalc.logisticCost)}.${
+      hasOptimization
+        ? " La presente descripción incorpora el escenario optimizado final del proyecto."
+        : ""
+    }`;
   };
 
   const renderCreatorBox = () => (
@@ -508,14 +650,11 @@ export default function App() {
   const renderComponentSummary = () => {
     const { activeCalc, activeForm } = getActiveScenario();
 
-    const isFvActive =
-      activeForm?.fvType && activeForm?.fvType !== "No aplica";
+    const isFvActive = activeForm?.fvType && activeForm?.fvType !== "No aplica";
 
     return (
       <View style={styles.docBox}>
-        <Text style={styles.docTitle}>
-          Resumen paramétrico por componentes
-        </Text>
+        <Text style={styles.docTitle}>Resumen paramétrico por componentes</Text>
 
         <View style={styles.summaryHeader}>
           <Text style={[styles.summaryHeadText, { flex: 2 }]}>Concepto</Text>
@@ -540,9 +679,7 @@ export default function App() {
         </View>
 
         <View style={styles.summaryRow}>
-          <Text style={[styles.summaryText, { flex: 2 }]}>
-            Construcción
-          </Text>
+          <Text style={[styles.summaryText, { flex: 2 }]}>Construcción</Text>
           <Text style={styles.summaryText}>
             {Number(activeCalc?.area || 0).toLocaleString("es-CO")}
           </Text>
@@ -555,9 +692,7 @@ export default function App() {
         </View>
 
         <View style={styles.summaryRow}>
-          <Text style={[styles.summaryText, { flex: 2 }]}>
-            Urbanismo
-          </Text>
+          <Text style={[styles.summaryText, { flex: 2 }]}>Urbanismo</Text>
           <Text style={styles.summaryText}>
             {Number(activeCalc?.urbanArea || 0).toLocaleString("es-CO")}
           </Text>
@@ -579,15 +714,11 @@ export default function App() {
           <Text style={styles.summaryText}>
             {formatCOP(activeCalc?.infraM2)}
           </Text>
-          <Text style={styles.summaryText}>
-            {formatCOP(activeCalc?.infra)}
-          </Text>
+          <Text style={styles.summaryText}>{formatCOP(activeCalc?.infra)}</Text>
         </View>
 
         <View style={styles.summaryRow}>
-          <Text style={[styles.summaryText, { flex: 2 }]}>
-            Fotovoltaico
-          </Text>
+          <Text style={[styles.summaryText, { flex: 2 }]}>Fotovoltaico</Text>
           <Text style={styles.summaryText}>
             {isFvActive
               ? Number(activeCalc?.area || 0).toLocaleString("es-CO")
@@ -596,9 +727,7 @@ export default function App() {
           <Text style={styles.summaryText}>
             {isFvActive ? formatCOP(activeCalc?.fvM2) : "No aplica"}
           </Text>
-          <Text style={styles.summaryText}>
-            {formatCOP(activeCalc?.fv)}
-          </Text>
+          <Text style={styles.summaryText}>{formatCOP(activeCalc?.fv)}</Text>
         </View>
       </View>
     );
@@ -606,8 +735,7 @@ export default function App() {
 
   const buildStudyComponentRowsHtml = () => {
     const { activeCalc, activeForm } = getActiveScenario();
-    const isFvActive =
-      activeForm?.fvType && activeForm?.fvType !== "No aplica";
+    const isFvActive = activeForm?.fvType && activeForm?.fvType !== "No aplica";
 
     const rows = [
       {
@@ -615,35 +743,35 @@ export default function App() {
         pct: "",
         vrM2: formatCOP(activeCalc?.studiesM2),
         area: Number(activeCalc?.area || 0).toLocaleString("es-CO"),
-        total: formatCOP(activeCalc?.studies)
+        total: formatCOP(activeCalc?.studies),
       },
       {
         concepto: "Interventoría de estudios y diseños",
-        pct: percent(activeCalc?.studiesInterventoriaPct),
+        pct: percent(activeCalc?.pctEyD),
         vrM2: "",
         area: "",
-        total: formatCOP(activeCalc?.studiesInterventoria)
+        total: formatCOP(activeCalc?.interventoriaEyD),
       },
       {
         concepto: "Construcción",
         pct: "",
         vrM2: formatCOP(activeCalc?.constructionM2),
         area: Number(activeCalc?.area || 0).toLocaleString("es-CO"),
-        total: formatCOP(activeCalc?.construction)
+        total: formatCOP(activeCalc?.construction),
       },
       {
         concepto: "Urbanismo",
         pct: "",
         vrM2: formatCOP(activeCalc?.urbanismM2),
         area: Number(activeCalc?.urbanArea || 0).toLocaleString("es-CO"),
-        total: formatCOP(activeCalc?.urbanism)
+        total: formatCOP(activeCalc?.urbanism),
       },
       {
         concepto: "Infraestructura complementaria",
         pct: "",
         vrM2: formatCOP(activeCalc?.infraM2),
         area: Number(activeCalc?.infraArea || 0).toLocaleString("es-CO"),
-        total: formatCOP(activeCalc?.infra)
+        total: formatCOP(activeCalc?.infra),
       },
       {
         concepto: "Sistema fotovoltaico",
@@ -654,22 +782,25 @@ export default function App() {
         area: isFvActive
           ? Number(activeCalc?.area || 0).toLocaleString("es-CO")
           : "-",
-        total: formatCOP(activeCalc?.fv)
+        total: formatCOP(activeCalc?.fv),
       },
       {
         concepto: "Interventoría de obra",
-        pct: percent(activeCalc?.workInterventoriaPct),
+        pct: percent(activeCalc?.pctObra),
         vrM2: "",
         area: "",
-        total: formatCOP(activeCalc?.workInterventoria)
+        total: formatCOP(activeCalc?.interventoriaObra),
       },
       {
         concepto: "Sobrecosto logístico",
-        pct: percent(activeCalc?.logisticPct),
+        pct:
+          activeCalc?.logisticPct && activeCalc?.logisticPct > 0
+            ? percent(activeCalc?.logisticPct)
+            : "",
         vrM2: "",
         area: "",
-        total: formatCOP(activeCalc?.logisticCost)
-      }
+        total: formatCOP(activeCalc?.logisticCost),
+      },
     ];
 
     return rows
@@ -694,7 +825,7 @@ export default function App() {
 
       await exportPdf({
         html,
-        fileName: `CTV - ${activeForm?.projectName || "Proyecto"}.pdf`
+        fileName: `CTV - ${activeForm?.projectName || "Proyecto"}.pdf`,
       });
     } catch (error) {
       console.log("Error exportando PDF CTV:", error);
@@ -709,12 +840,12 @@ export default function App() {
         form,
         calc,
         logisticDescription: renderLogisticDescription(),
-        componentRowsHtml: buildStudyComponentRowsHtml()
+        componentRowsHtml: buildStudyComponentRowsHtml(),
       });
 
       await exportPdf({
         html,
-        fileName: `Estudio - ${activeForm?.projectName || "Proyecto"}.pdf`
+        fileName: `Estudio - ${activeForm?.projectName || "Proyecto"}.pdf`,
       });
     } catch (error) {
       console.log("Error exportando PDF Estudio:", error);
@@ -761,6 +892,11 @@ export default function App() {
           departmentSearch={departmentSearch}
           setDepartmentSearch={setDepartmentSearch}
           filteredDepartments={filteredDepartments}
+          municipalityModalVisible={municipalityModalVisible}
+          setMunicipalityModalVisible={setMunicipalityModalVisible}
+          municipalitySearch={municipalitySearch}
+          setMunicipalitySearch={setMunicipalitySearch}
+          filteredMunicipalities={filteredMunicipalities}
           segments={segments}
           updateSegment={updateSegment}
           addSegment={addSegment}
@@ -817,26 +953,58 @@ export default function App() {
       )}
 
       <View style={styles.bottomBar}>
-        <TouchableOpacity onPress={() => setView("inicio")} style={styles.bottomBtn}>
-          <Text style={[styles.bottomText, view === "inicio" && styles.bottomTextActive]}>
+        <TouchableOpacity
+          onPress={() => setView("inicio")}
+          style={styles.bottomBtn}
+        >
+          <Text
+            style={[
+              styles.bottomText,
+              view === "inicio" && styles.bottomTextActive,
+            ]}
+          >
             Inicio
           </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => setView("ctv")} style={styles.bottomBtn}>
-          <Text style={[styles.bottomText, view === "ctv" && styles.bottomTextActive]}>
+        <TouchableOpacity
+          onPress={() => setView("ctv")}
+          style={styles.bottomBtn}
+        >
+          <Text
+            style={[
+              styles.bottomText,
+              view === "ctv" && styles.bottomTextActive,
+            ]}
+          >
             CTV
           </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => setView("estudio")} style={styles.bottomBtn}>
-          <Text style={[styles.bottomText, view === "estudio" && styles.bottomTextActive]}>
+        <TouchableOpacity
+          onPress={() => setView("estudio")}
+          style={styles.bottomBtn}
+        >
+          <Text
+            style={[
+              styles.bottomText,
+              view === "estudio" && styles.bottomTextActive,
+            ]}
+          >
             Estudio
           </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => setView("historial")} style={styles.bottomBtn}>
-          <Text style={[styles.bottomText, view === "historial" && styles.bottomTextActive]}>
+        <TouchableOpacity
+          onPress={() => setView("historial")}
+          style={styles.bottomBtn}
+        >
+          <Text
+            style={[
+              styles.bottomText,
+              view === "historial" && styles.bottomTextActive,
+            ]}
+          >
             Historial
           </Text>
         </TouchableOpacity>
@@ -848,7 +1016,7 @@ export default function App() {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: "#F1F5F9"
+    backgroundColor: "#F1F5F9",
   },
   header: {
     minHeight: 56,
@@ -857,64 +1025,64 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     flexDirection: "row",
     paddingHorizontal: 16,
-    paddingVertical: 10
+    paddingVertical: 10,
   },
   headerText: {
     color: "#FFFFFF",
     fontSize: 16,
-    fontWeight: "700"
+    fontWeight: "700",
   },
   headerSubText: {
     color: "#CBD5E1",
     fontSize: 11,
     fontWeight: "600",
-    marginTop: 2
+    marginTop: 2,
   },
   logoutButton: {
     backgroundColor: "#1E293B",
     borderRadius: 10,
     paddingHorizontal: 12,
-    paddingVertical: 8
+    paddingVertical: 8,
   },
   logoutButtonText: {
     color: "#FFFFFF",
     fontSize: 12,
-    fontWeight: "700"
+    fontWeight: "700",
   },
   centeredScreen: {
     justifyContent: "center",
-    alignItems: "center"
+    alignItems: "center",
   },
   loadingText: {
     fontSize: 16,
     fontWeight: "700",
-    color: "#0F172A"
+    color: "#0F172A",
   },
   container: {
-    flex: 1
+    flex: 1,
   },
   content: {
     padding: 16,
-    paddingBottom: 110
+    paddingBottom: 110,
   },
   title: {
     fontSize: 22,
     fontWeight: "800",
     color: "#0F172A",
-    marginBottom: 16
+    marginBottom: 16,
   },
   card: {
     backgroundColor: "#FFFFFF",
     borderRadius: 18,
     padding: 14,
-    marginBottom: 10
+    marginBottom: 10,
   },
   halfCard: {
-    flex: 1
+    flex: 1,
   },
   rowDouble: {
     flexDirection: "row",
-    gap: 10
+    gap: 10,
   },
   creatorBox: {
     backgroundColor: "#E0F2FE",
@@ -922,19 +1090,19 @@ const styles = StyleSheet.create({
     padding: 14,
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: "#BAE6FD"
+    borderColor: "#BAE6FD",
   },
   creatorTitle: {
     color: "#0369A1",
     fontSize: 13,
     fontWeight: "800",
-    marginBottom: 6
+    marginBottom: 6,
   },
   creatorText: {
     color: "#0C4A6E",
     fontSize: 12,
     marginBottom: 3,
-    fontWeight: "600"
+    fontWeight: "600",
   },
   baseBox: {
     backgroundColor: "#ECFDF5",
@@ -942,37 +1110,37 @@ const styles = StyleSheet.create({
     padding: 14,
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: "#A7F3D0"
+    borderColor: "#A7F3D0",
   },
   baseTitle: {
     color: "#047857",
     fontSize: 13,
     fontWeight: "800",
-    marginBottom: 6
+    marginBottom: 6,
   },
   baseText: {
     color: "#065F46",
     fontSize: 12,
     lineHeight: 18,
-    fontWeight: "600"
+    fontWeight: "600",
   },
   label: {
     color: "#64748B",
     fontSize: 12,
     fontWeight: "700",
-    marginBottom: 6
+    marginBottom: 6,
   },
   smallLabel: {
     color: "#64748B",
     fontSize: 11,
     fontWeight: "700",
     marginBottom: 6,
-    marginTop: 8
+    marginTop: 8,
   },
   value: {
     color: "#0F172A",
     fontSize: 15,
-    fontWeight: "800"
+    fontWeight: "800",
   },
   input: {
     backgroundColor: "#FFFFFF",
@@ -982,7 +1150,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#0F172A",
     borderWidth: 1,
-    borderColor: "#CBD5E1"
+    borderColor: "#CBD5E1",
   },
   selectBox: {
     backgroundColor: "#F8FAFC",
@@ -991,37 +1159,37 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center"
+    alignItems: "center",
   },
   selectBoxText: {
     color: "#0F172A",
     fontWeight: "700",
     fontSize: 14,
-    flex: 1
+    flex: 1,
   },
   selectBoxArrow: {
     color: "#64748B",
     fontSize: 12,
     fontWeight: "800",
-    marginLeft: 10
+    marginLeft: 10,
   },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(15,23,42,0.45)",
-    justifyContent: "flex-end"
+    justifyContent: "flex-end",
   },
   modalCard: {
     backgroundColor: "#FFFFFF",
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
     padding: 16,
-    maxHeight: "80%"
+    maxHeight: "80%",
   },
   modalTitle: {
     fontSize: 16,
     fontWeight: "800",
     color: "#0F172A",
-    marginBottom: 12
+    marginBottom: 12,
   },
   modalSearchInput: {
     backgroundColor: "#F8FAFC",
@@ -1030,47 +1198,47 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     marginBottom: 12,
     color: "#0F172A",
-    fontWeight: "700"
+    fontWeight: "700",
   },
   modalItem: {
     paddingVertical: 12,
     paddingHorizontal: 12,
     borderRadius: 12,
     marginBottom: 6,
-    backgroundColor: "#F8FAFC"
+    backgroundColor: "#F8FAFC",
   },
   modalItemActive: {
-    backgroundColor: "#0F172A"
+    backgroundColor: "#0F172A",
   },
   modalItemText: {
     color: "#0F172A",
     fontSize: 14,
-    fontWeight: "700"
+    fontWeight: "700",
   },
   modalItemTextActive: {
-    color: "#FFFFFF"
+    color: "#FFFFFF",
   },
   modalCloseButton: {
     marginTop: 12,
     backgroundColor: "#E2E8F0",
     borderRadius: 14,
     paddingVertical: 12,
-    alignItems: "center"
+    alignItems: "center",
   },
   modalCloseButtonText: {
     color: "#0F172A",
-    fontWeight: "800"
+    fontWeight: "800",
   },
   emptySearchBox: {
     backgroundColor: "#F8FAFC",
     borderRadius: 12,
     padding: 14,
-    alignItems: "center"
+    alignItems: "center",
   },
   emptySearchText: {
     color: "#64748B",
     fontSize: 13,
-    fontWeight: "700"
+    fontWeight: "700",
   },
   pill: {
     backgroundColor: "#E2E8F0",
@@ -1078,7 +1246,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 20,
     marginRight: 8,
-    marginBottom: 4
+    marginBottom: 4,
   },
   pillSmall: {
     backgroundColor: "#E2E8F0",
@@ -1086,97 +1254,97 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     borderRadius: 16,
     marginRight: 8,
-    marginBottom: 4
+    marginBottom: 4,
   },
   pillActive: {
-    backgroundColor: "#0F172A"
+    backgroundColor: "#0F172A",
   },
   pillText: {
     fontSize: 12,
     fontWeight: "700",
-    color: "#334155"
+    color: "#334155",
   },
   pillTextSmall: {
     fontSize: 11,
     fontWeight: "700",
-    color: "#334155"
+    color: "#334155",
   },
   pillTextActive: {
-    color: "#FFFFFF"
+    color: "#FFFFFF",
   },
   rowPills: {
-    flexDirection: "row"
+    flexDirection: "row",
   },
   segmentBox: {
     backgroundColor: "#F8FAFC",
     borderRadius: 14,
     padding: 10,
-    marginBottom: 10
+    marginBottom: 10,
   },
   segmentTitle: {
     color: "#0F172A",
     fontSize: 13,
     fontWeight: "800",
-    marginBottom: 4
+    marginBottom: 4,
   },
   inlineButtons: {
     flexDirection: "row",
-    marginTop: 8
+    marginTop: 8,
   },
   smallButton: {
     backgroundColor: "#FEE2E2",
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 12
+    borderRadius: 12,
   },
   smallButtonText: {
     color: "#991B1B",
     fontWeight: "700",
-    fontSize: 12
+    fontSize: 12,
   },
   summaryHeader: {
     backgroundColor: "#E2E8F0",
     borderRadius: 12,
     padding: 10,
     flexDirection: "row",
-    marginBottom: 8
+    marginBottom: 8,
   },
   summaryHeadText: {
     flex: 1,
     fontSize: 10,
     fontWeight: "800",
     color: "#334155",
-    textAlign: "center"
+    textAlign: "center",
   },
   summaryRow: {
     backgroundColor: "#F8FAFC",
     borderRadius: 12,
     padding: 10,
     flexDirection: "row",
-    marginBottom: 8
+    marginBottom: 8,
   },
   summaryText: {
     flex: 1,
     fontSize: 10,
     color: "#0F172A",
-    textAlign: "center"
+    textAlign: "center",
   },
   ctvTable: {
-    minWidth: 760
+    minWidth: 760,
   },
   ctvHeader: {
     backgroundColor: "#E2E8F0",
     borderRadius: 14,
     padding: 10,
     flexDirection: "row",
-    marginBottom: 8
+    marginBottom: 8,
   },
   ctvHeadText: {
     flex: 1,
     fontSize: 10,
     fontWeight: "800",
     color: "#334155",
-    textAlign: "center"
+    textAlign: "center",
   },
   ctvRow: {
     backgroundColor: "#FFFFFF",
@@ -1185,27 +1353,27 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: "#E2E8F0"
+    borderColor: "#E2E8F0",
   },
   ctvRowDark: {
     backgroundColor: "#0F172A",
     borderRadius: 14,
     padding: 10,
     flexDirection: "row",
-    marginBottom: 8
+    marginBottom: 8,
   },
   ctvText: {
     flex: 1,
     fontSize: 10,
     color: "#0F172A",
-    textAlign: "center"
+    textAlign: "center",
   },
   ctvTextDark: {
     flex: 1,
     fontSize: 10,
     color: "#FFFFFF",
     textAlign: "center",
-    fontWeight: "700"
+    fontWeight: "700",
   },
   ctvVerticalTable: {
     minWidth: 760,
@@ -1213,88 +1381,88 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "#94A3B8"
+    borderColor: "#94A3B8",
   },
   ctvVerticalHeader: {
     flexDirection: "row",
     backgroundColor: "#1F4E78",
     borderBottomWidth: 1,
-    borderBottomColor: "#94A3B8"
+    borderBottomColor: "#94A3B8",
   },
   ctvVerticalHeadText: {
     color: "#FFFFFF",
     fontSize: 12,
     fontWeight: "800",
     paddingVertical: 10,
-    paddingHorizontal: 8
+    paddingHorizontal: 8,
   },
   ctvVerticalRow: {
     flexDirection: "row",
     borderBottomWidth: 1,
-    borderBottomColor: "#94A3B8"
+    borderBottomColor: "#94A3B8",
   },
   ctvVerticalCell: {
     paddingVertical: 6,
     paddingHorizontal: 8,
     justifyContent: "center",
     borderRightWidth: 1,
-    borderRightColor: "#94A3B8"
+    borderRightColor: "#94A3B8",
   },
   ctvVerticalSectionCell: {
-    backgroundColor: "#D9E2F3"
+    backgroundColor: "#D9E2F3",
   },
   ctvVerticalConceptCell: {
-    backgroundColor: "#F2F2F2"
+    backgroundColor: "#F2F2F2",
   },
   ctvVerticalValueCell: {
-    backgroundColor: "#FFFFFF"
+    backgroundColor: "#FFFFFF",
   },
   ctvVerticalSectionText: {
     fontSize: 11,
     fontWeight: "800",
-    color: "#0F172A"
+    color: "#0F172A",
   },
   ctvVerticalConceptText: {
     fontSize: 11,
-    color: "#0F172A"
+    color: "#0F172A",
   },
   ctvVerticalValueText: {
     fontSize: 11,
-    color: "#0F172A"
+    color: "#0F172A",
   },
   ctvVerticalValueTextStrong: {
-    fontWeight: "800"
+    fontWeight: "800",
   },
   ctvNormalRow: {},
   ctvSoftHighlightRow: {
-    backgroundColor: "#FCE4D6"
+    backgroundColor: "#FCE4D6",
   },
   ctvSubtotalRow: {
-    backgroundColor: "#F4C7AB"
+    backgroundColor: "#F4C7AB",
   },
   ctvFinanceRow: {
-    backgroundColor: "#ED7D31"
+    backgroundColor: "#ED7D31",
   },
   docBox: {
     backgroundColor: "#FFFFFF",
     borderRadius: 18,
     padding: 14,
-    marginBottom: 10
+    marginBottom: 10,
   },
   docTitle: {
     color: "#0F172A",
     fontSize: 14,
     fontWeight: "800",
-    marginBottom: 8
+    marginBottom: 8,
   },
   docText: {
     color: "#334155",
     fontSize: 13,
-    lineHeight: 20
+    lineHeight: 20,
   },
   docBold: {
     fontWeight: "800",
-    color: "#0F172A"
+    color: "#0F172A",
   },
   warningBox: {
     backgroundColor: "#FEF2F2",
@@ -1302,73 +1470,73 @@ const styles = StyleSheet.create({
     padding: 14,
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: "#FECACA"
+    borderColor: "#FECACA",
   },
   warningTitle: {
     color: "#991B1B",
     fontSize: 13,
     fontWeight: "800",
-    marginBottom: 6
+    marginBottom: 6,
   },
   warningText: {
     color: "#991B1B",
     fontSize: 12,
-    marginBottom: 4
+    marginBottom: 4,
   },
   rowActions: {
     flexDirection: "row",
     gap: 10,
-    marginTop: 4
+    marginTop: 4,
   },
   projectActions: {
     flexDirection: "row",
     gap: 10,
-    marginTop: 12
+    marginTop: 12,
   },
   buttonHalf: {
     backgroundColor: "#0F172A",
     borderRadius: 16,
     paddingVertical: 14,
     alignItems: "center",
-    flex: 1
+    flex: 1,
   },
   buttonThird: {
     backgroundColor: "#0F172A",
     borderRadius: 16,
     paddingVertical: 14,
     alignItems: "center",
-    flex: 1
+    flex: 1,
   },
   button: {
     backgroundColor: "#0F172A",
     borderRadius: 16,
     paddingVertical: 14,
     alignItems: "center",
-    justifyContent: "center"
+    justifyContent: "center",
   },
   buttonText: {
     color: "#FFFFFF",
     fontSize: 14,
-    fontWeight: "700"
+    fontWeight: "700",
   },
   buttonSecondary: {
     backgroundColor: "#E2E8F0",
     borderRadius: 14,
     paddingVertical: 12,
     alignItems: "center",
-    marginTop: 8
+    marginTop: 8,
   },
   buttonSecondaryText: {
     color: "#0F172A",
     fontSize: 13,
-    fontWeight: "700"
+    fontWeight: "700",
   },
   buttonDanger: {
     backgroundColor: "#B91C1C",
     borderRadius: 16,
     paddingVertical: 14,
     alignItems: "center",
-    marginTop: 10
+    marginTop: 10,
   },
   buttonMini: {
     backgroundColor: "#E2E8F0",
@@ -1376,12 +1544,12 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 14,
     alignItems: "center",
-    flex: 1
+    flex: 1,
   },
   buttonMiniText: {
     color: "#0F172A",
     fontSize: 12,
-    fontWeight: "700"
+    fontWeight: "700",
   },
   buttonMiniDanger: {
     backgroundColor: "#FEE2E2",
@@ -1389,12 +1557,12 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 14,
     alignItems: "center",
-    flex: 1
+    flex: 1,
   },
   buttonMiniDangerText: {
     color: "#991B1B",
     fontSize: 12,
-    fontWeight: "700"
+    fontWeight: "700",
   },
   bottomBar: {
     position: "absolute",
@@ -1407,18 +1575,18 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-around",
     borderWidth: 1,
-    borderColor: "#E2E8F0"
+    borderColor: "#E2E8F0",
   },
   bottomBtn: {
     paddingVertical: 6,
-    paddingHorizontal: 4
+    paddingHorizontal: 4,
   },
   bottomText: {
     color: "#64748B",
     fontSize: 10,
-    fontWeight: "700"
+    fontWeight: "700",
   },
   bottomTextActive: {
-    color: "#0F172A"
-  }
+    color: "#0F172A",
+  },
 });

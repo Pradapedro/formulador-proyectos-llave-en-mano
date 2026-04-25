@@ -5,19 +5,35 @@ import {
   TouchableOpacity,
   TextInput,
   ScrollView,
-  Modal
+  Modal,
 } from "react-native";
 import {
   formatCOP,
   formatNumberInput,
-  sanitizeNumericInput
+  sanitizeNumericInput,
+  percent,
 } from "../utils/formatters";
 import {
   infraValues,
   logisticModes,
   interventionTypes,
-  typologies
+  typologies,
 } from "../data/constants";
+
+const LOGISTIC_CALCULATION_OPTIONS = [
+  {
+    key: "automatico_pct",
+    label: "Automático % x km",
+  },
+  {
+    key: "vr_ton_km",
+    label: "Vr tonelada-km",
+  },
+  {
+    key: "vr_ton_ruta",
+    label: "Vr tonelada-ruta",
+  },
+];
 
 export default function FormScreen({
   styles,
@@ -30,6 +46,11 @@ export default function FormScreen({
   departmentSearch,
   setDepartmentSearch,
   filteredDepartments,
+  municipalityModalVisible,
+  setMunicipalityModalVisible,
+  municipalitySearch,
+  setMunicipalitySearch,
+  filteredMunicipalities,
   segments,
   updateSegment,
   addSegment,
@@ -39,8 +60,40 @@ export default function FormScreen({
   setView,
   renderCreatorBox,
   renderBaseBox,
-  renderComponentSummary
+  renderComponentSummary,
 }) {
+  const getSegmentCalculationOptions = (mode) => {
+    if (mode === "Marítimo") {
+      return LOGISTIC_CALCULATION_OPTIONS.filter(
+        (item) => item.key !== "automatico_pct"
+      );
+    }
+    return LOGISTIC_CALCULATION_OPTIONS;
+  };
+
+  const getUnitValueLabel = (calculationMode) => {
+    if (calculationMode === "vr_ton_km") {
+      return "Valor unitario ($/ton-km)";
+    }
+    if (calculationMode === "vr_ton_ruta") {
+      return "Valor unitario ($/ton)";
+    }
+    return "Valor unitario";
+  };
+
+  const getUnitValuePlaceholder = (calculationMode) => {
+    if (calculationMode === "vr_ton_km") {
+      return "Ej: 2500";
+    }
+    if (calculationMode === "vr_ton_ruta") {
+      return "Ej: 1470230";
+    }
+    return "0";
+  };
+
+  const isDistanceRequired = (calculationMode) =>
+    calculationMode !== "vr_ton_ruta";
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.title}>Formulario del proyecto</Text>
@@ -96,10 +149,10 @@ export default function FormScreen({
                   key={dep}
                   style={[
                     styles.modalItem,
-                    form.department === dep && styles.modalItemActive
+                    form.department === dep && styles.modalItemActive,
                   ]}
                   onPress={() => {
-                    setForm({ ...form, department: dep });
+                    setForm({ ...form, department: dep, municipality: "" });
                     setDepartmentModalVisible(false);
                     setDepartmentSearch("");
                   }}
@@ -107,7 +160,7 @@ export default function FormScreen({
                   <Text
                     style={[
                       styles.modalItemText,
-                      form.department === dep && styles.modalItemTextActive
+                      form.department === dep && styles.modalItemTextActive,
                     ]}
                   >
                     {dep}
@@ -139,14 +192,86 @@ export default function FormScreen({
 
       <View style={styles.card}>
         <Text style={styles.label}>Municipio</Text>
-        <TextInput
-          style={styles.input}
-          value={form.municipality}
-          onChangeText={(text) => setForm({ ...form, municipality: text })}
-          placeholder="Ingrese el municipio"
-          placeholderTextColor="#94A3B8"
-        />
+        <TouchableOpacity
+          style={styles.selectBox}
+          onPress={() => form.department && setMunicipalityModalVisible(true)}
+        >
+          <Text style={styles.selectBoxText}>
+            {form.municipality ||
+              (form.department
+                ? "Seleccione un municipio"
+                : "Seleccione primero un departamento")}
+          </Text>
+          <Text style={styles.selectBoxArrow}>▼</Text>
+        </TouchableOpacity>
       </View>
+
+      <Modal
+        visible={municipalityModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setMunicipalityModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Seleccionar municipio</Text>
+
+            <TextInput
+              style={styles.modalSearchInput}
+              placeholder="Buscar municipio"
+              placeholderTextColor="#94A3B8"
+              value={municipalitySearch}
+              onChangeText={setMunicipalitySearch}
+            />
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {filteredMunicipalities.map((municipality) => (
+                <TouchableOpacity
+                  key={municipality}
+                  style={[
+                    styles.modalItem,
+                    form.municipality === municipality &&
+                      styles.modalItemActive,
+                  ]}
+                  onPress={() => {
+                    setForm({ ...form, municipality });
+                    setMunicipalityModalVisible(false);
+                    setMunicipalitySearch("");
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.modalItemText,
+                      form.municipality === municipality &&
+                        styles.modalItemTextActive,
+                    ]}
+                  >
+                    {municipality}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+
+              {filteredMunicipalities.length === 0 && (
+                <View style={styles.emptySearchBox}>
+                  <Text style={styles.emptySearchText}>
+                    No se encontraron municipios para este departamento.
+                  </Text>
+                </View>
+              )}
+            </ScrollView>
+
+            <TouchableOpacity
+              style={styles.modalCloseButton}
+              onPress={() => {
+                setMunicipalityModalVisible(false);
+                setMunicipalitySearch("");
+              }}
+            >
+              <Text style={styles.modalCloseButtonText}>Cerrar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       <View style={styles.card}>
         <Text style={styles.label}>Tipo de intervención</Text>
@@ -154,13 +279,16 @@ export default function FormScreen({
           {interventionTypes.map((item) => (
             <TouchableOpacity
               key={item}
-              style={[styles.pill, form.intervention === item && styles.pillActive]}
+              style={[
+                styles.pill,
+                form.intervention === item && styles.pillActive,
+              ]}
               onPress={() => setForm({ ...form, intervention: item })}
             >
               <Text
                 style={[
                   styles.pillText,
-                  form.intervention === item && styles.pillTextActive
+                  form.intervention === item && styles.pillTextActive,
                 ]}
               >
                 {item}
@@ -182,7 +310,7 @@ export default function FormScreen({
               <Text
                 style={[
                   styles.pillText,
-                  form.typology === item && styles.pillTextActive
+                  form.typology === item && styles.pillTextActive,
                 ]}
               >
                 {item}
@@ -193,18 +321,220 @@ export default function FormScreen({
       </View>
 
       <View style={styles.card}>
+        <Text style={styles.label}>Valor estudios y diseños</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <TouchableOpacity
+            style={[
+              styles.pill,
+              form.studyMode === "automatico" && styles.pillActive,
+            ]}
+            onPress={() => setForm({ ...form, studyMode: "automatico" })}
+          >
+            <Text
+              style={[
+                styles.pillText,
+                form.studyMode === "automatico" && styles.pillTextActive,
+              ]}
+            >
+              Automático por zona
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.pill,
+              form.studyMode === "minimo" && styles.pillActive,
+            ]}
+            onPress={() => setForm({ ...form, studyMode: "minimo" })}
+          >
+            <Text
+              style={[
+                styles.pillText,
+                form.studyMode === "minimo" && styles.pillTextActive,
+              ]}
+            >
+              Valor mínimo ($160.000/m²)
+            </Text>
+          </TouchableOpacity>
+        </ScrollView>
+
+        <Text style={[styles.smallLabel, { marginTop: 10 }]}>
+          Valor aplicado actualmente
+        </Text>
+        <Text style={styles.value}>{formatCOP(calc?.studiesM2 || 0)}/m²</Text>
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.label}>Interventoría estudios y diseños</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <TouchableOpacity
+            style={[
+              styles.pill,
+              form.eydInterventoriaMode === "automatico" && styles.pillActive,
+            ]}
+            onPress={() =>
+              setForm({
+                ...form,
+                eydInterventoriaMode: "automatico",
+                eydInterventoriaManual: "",
+              })
+            }
+          >
+            <Text
+              style={[
+                styles.pillText,
+                form.eydInterventoriaMode === "automatico" &&
+                  styles.pillTextActive,
+              ]}
+            >
+              Automático por zona
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.pill,
+              form.eydInterventoriaMode === "manual" && styles.pillActive,
+            ]}
+            onPress={() =>
+              setForm({
+                ...form,
+                eydInterventoriaMode: "manual",
+              })
+            }
+          >
+            <Text
+              style={[
+                styles.pillText,
+                form.eydInterventoriaMode === "manual" && styles.pillTextActive,
+              ]}
+            >
+              Manual (%)
+            </Text>
+          </TouchableOpacity>
+        </ScrollView>
+
+        {form.eydInterventoriaMode === "manual" && (
+          <>
+            <Text style={[styles.smallLabel, { marginTop: 10 }]}>
+              Porcentaje manual E&D (4.0% a 7.5%)
+            </Text>
+            <TextInput
+              style={styles.input}
+              value={form.eydInterventoriaManual}
+              keyboardType="decimal-pad"
+              onChangeText={(text) =>
+                setForm({
+                  ...form,
+                  eydInterventoriaManual: text.replace(/[^0-9.,]/g, ""),
+                })
+              }
+              placeholder="Ej: 6.5"
+              placeholderTextColor="#94A3B8"
+            />
+          </>
+        )}
+
+        <Text style={[styles.smallLabel, { marginTop: 10 }]}>
+          Valor aplicado actualmente
+        </Text>
+        <Text style={styles.value}>{percent(calc?.pctEyD || 0)}</Text>
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.label}>Interventoría de obra</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <TouchableOpacity
+            style={[
+              styles.pill,
+              form.obraInterventoriaMode === "automatico" && styles.pillActive,
+            ]}
+            onPress={() =>
+              setForm({
+                ...form,
+                obraInterventoriaMode: "automatico",
+                obraInterventoriaManual: "",
+              })
+            }
+          >
+            <Text
+              style={[
+                styles.pillText,
+                form.obraInterventoriaMode === "automatico" &&
+                  styles.pillTextActive,
+              ]}
+            >
+              Automático por zona
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.pill,
+              form.obraInterventoriaMode === "manual" && styles.pillActive,
+            ]}
+            onPress={() =>
+              setForm({
+                ...form,
+                obraInterventoriaMode: "manual",
+              })
+            }
+          >
+            <Text
+              style={[
+                styles.pillText,
+                form.obraInterventoriaMode === "manual" &&
+                  styles.pillTextActive,
+              ]}
+            >
+              Manual (%)
+            </Text>
+          </TouchableOpacity>
+        </ScrollView>
+
+        {form.obraInterventoriaMode === "manual" && (
+          <>
+            <Text style={[styles.smallLabel, { marginTop: 10 }]}>
+              Porcentaje manual obra (4.0% a 7.5%)
+            </Text>
+            <TextInput
+              style={styles.input}
+              value={form.obraInterventoriaManual}
+              keyboardType="decimal-pad"
+              onChangeText={(text) =>
+                setForm({
+                  ...form,
+                  obraInterventoriaManual: text.replace(/[^0-9.,]/g, ""),
+                })
+              }
+              placeholder="Ej: 6.0"
+              placeholderTextColor="#94A3B8"
+            />
+          </>
+        )}
+
+        <Text style={[styles.smallLabel, { marginTop: 10 }]}>
+          Valor aplicado actualmente
+        </Text>
+        <Text style={styles.value}>{percent(calc?.pctObra || 0)}</Text>
+      </View>
+
+      <View style={styles.card}>
         <Text style={styles.label}>Zona logística manual</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           {manualZones.map((item) => (
             <TouchableOpacity
               key={item === "" ? "auto" : item}
-              style={[styles.pill, form.manualZone === item && styles.pillActive]}
+              style={[
+                styles.pill,
+                form.manualZone === item && styles.pillActive,
+              ]}
               onPress={() => setForm({ ...form, manualZone: item })}
             >
               <Text
                 style={[
                   styles.pillText,
-                  form.manualZone === item && styles.pillTextActive
+                  form.manualZone === item && styles.pillTextActive,
                 ]}
               >
                 {item === "" ? "Automática" : item}
@@ -227,7 +557,9 @@ export default function FormScreen({
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.label}>Valor construcción base calculado ($/m²)</Text>
+        <Text style={styles.label}>
+          Valor construcción base calculado ($/m²)
+        </Text>
         <Text style={styles.value}>{formatCOP(calc?.constructionM2 || 0)}</Text>
       </View>
 
@@ -249,7 +581,7 @@ export default function FormScreen({
         <View
           style={[
             styles.card,
-            { backgroundColor: calc.capCompliance ? "#ECFDF5" : "#FEF2F2" }
+            { backgroundColor: calc.capCompliance ? "#ECFDF5" : "#FEF2F2" },
           ]}
         >
           <Text style={styles.label}>Evaluación frente al techo</Text>
@@ -299,19 +631,22 @@ export default function FormScreen({
           {Object.keys(infraValues).map((item) => (
             <TouchableOpacity
               key={item}
-              style={[styles.pill, form.infraType === item && styles.pillActive]}
+              style={[
+                styles.pill,
+                form.infraType === item && styles.pillActive,
+              ]}
               onPress={() =>
                 setForm({
                   ...form,
                   infraType: item,
-                  infraArea: item === "No aplica" ? "0" : form.infraArea
+                  infraArea: item === "No aplica" ? "0" : form.infraArea,
                 })
               }
             >
               <Text
                 style={[
                   styles.pillText,
-                  form.infraType === item && styles.pillTextActive
+                  form.infraType === item && styles.pillTextActive,
                 ]}
               >
                 {item}
@@ -322,7 +657,9 @@ export default function FormScreen({
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.label}>Área infraestructura complementaria (m²)</Text>
+        <Text style={styles.label}>
+          Área infraestructura complementaria (m²)
+        </Text>
         <TextInput
           style={styles.input}
           value={formatNumberInput(form.infraArea)}
@@ -346,14 +683,14 @@ export default function FormScreen({
                 setForm({
                   ...form,
                   fvType: item,
-                  fvCoverage: item === "No aplica" ? "0" : form.fvCoverage
+                  fvCoverage: item === "No aplica" ? "0" : form.fvCoverage,
                 })
               }
             >
               <Text
                 style={[
                   styles.pillText,
-                  form.fvType === item && styles.pillTextActive
+                  form.fvType === item && styles.pillTextActive,
                 ]}
               >
                 {item}
@@ -390,13 +727,16 @@ export default function FormScreen({
           {["No", "Sí"].map((item) => (
             <TouchableOpacity
               key={item}
-              style={[styles.pill, form.logisticApplies === item && styles.pillActive]}
+              style={[
+                styles.pill,
+                form.logisticApplies === item && styles.pillActive,
+              ]}
               onPress={() => setForm({ ...form, logisticApplies: item })}
             >
               <Text
                 style={[
                   styles.pillText,
-                  form.logisticApplies === item && styles.pillTextActive
+                  form.logisticApplies === item && styles.pillTextActive,
                 ]}
               >
                 {item}
@@ -410,52 +750,149 @@ export default function FormScreen({
         <View style={styles.card}>
           <Text style={styles.label}>Tramos logísticos</Text>
 
-          {segments.map((seg, index) => (
-            <View key={index} style={styles.segmentBox}>
-              <Text style={styles.segmentTitle}>Tramo {index + 1}</Text>
+          {segments.map((seg, index) => {
+            const availableCalculationOptions = getSegmentCalculationOptions(
+              seg.mode
+            );
 
-              <Text style={styles.smallLabel}>Modalidad</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                {logisticModes.map((mode) => (
-                  <TouchableOpacity
-                    key={mode}
-                    style={[styles.pillSmall, seg.mode === mode && styles.pillActive]}
-                    onPress={() => updateSegment(index, "mode", mode)}
-                  >
-                    <Text
+            const helperText =
+              seg.calculationMode === "automatico_pct"
+                ? "Este método calcula el tramo con porcentaje por kilómetro sobre la obra base, y ese mismo porcentaje se aplica automáticamente al sistema fotovoltaico."
+                : seg.calculationMode === "vr_ton_km"
+                ? "Este método calcula el tramo con valor por tonelada-kilómetro usando el peso logístico base del proyecto."
+                : "Este método calcula el tramo con valor por tonelada para toda la ruta, sin depender de kilómetros.";
+
+            return (
+              <View key={index} style={styles.segmentBox}>
+                <Text style={styles.segmentTitle}>Tramo {index + 1}</Text>
+
+                <Text style={styles.smallLabel}>Modalidad</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  {logisticModes.map((mode) => (
+                    <TouchableOpacity
+                      key={mode}
                       style={[
-                        styles.pillTextSmall,
-                        seg.mode === mode && styles.pillTextActive
+                        styles.pillSmall,
+                        seg.mode === mode && styles.pillActive,
                       ]}
+                      onPress={() => {
+                        const nextCalculationMode =
+                          mode === "Marítimo" &&
+                          seg.calculationMode === "automatico_pct"
+                            ? "vr_ton_km"
+                            : seg.calculationMode;
+
+                        updateSegment(index, "mode", mode);
+                        updateSegment(
+                          index,
+                          "calculationMode",
+                          nextCalculationMode || "automatico_pct"
+                        );
+                      }}
                     >
-                      {mode}
+                      <Text
+                        style={[
+                          styles.pillTextSmall,
+                          seg.mode === mode && styles.pillTextActive,
+                        ]}
+                      >
+                        {mode}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+
+                <Text style={styles.smallLabel}>Método de cálculo</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  {availableCalculationOptions.map((option) => (
+                    <TouchableOpacity
+                      key={option.key}
+                      style={[
+                        styles.pillSmall,
+                        seg.calculationMode === option.key && styles.pillActive,
+                      ]}
+                      onPress={() =>
+                        updateSegment(index, "calculationMode", option.key)
+                      }
+                    >
+                      <Text
+                        style={[
+                          styles.pillTextSmall,
+                          seg.calculationMode === option.key &&
+                            styles.pillTextActive,
+                        ]}
+                      >
+                        {option.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+
+                <Text style={[styles.smallLabel, { color: "#475569" }]}>
+                  {helperText}
+                </Text>
+
+                {isDistanceRequired(seg.calculationMode) && (
+                  <>
+                    <Text style={styles.smallLabel}>Distancia (km)</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={formatNumberInput(seg.distance)}
+                      keyboardType="numeric"
+                      onChangeText={(text) =>
+                        updateSegment(
+                          index,
+                          "distance",
+                          sanitizeNumericInput(text)
+                        )
+                      }
+                      placeholder="0"
+                      placeholderTextColor="#94A3B8"
+                    />
+                  </>
+                )}
+
+                {(seg.calculationMode === "vr_ton_km" ||
+                  seg.calculationMode === "vr_ton_ruta") && (
+                  <>
+                    <Text style={styles.smallLabel}>
+                      {getUnitValueLabel(seg.calculationMode)}
                     </Text>
+                    <TextInput
+                      style={styles.input}
+                      value={formatNumberInput(seg.unitValue)}
+                      keyboardType="numeric"
+                      onChangeText={(text) =>
+                        updateSegment(
+                          index,
+                          "unitValue",
+                          sanitizeNumericInput(text)
+                        )
+                      }
+                      placeholder={getUnitValuePlaceholder(seg.calculationMode)}
+                      placeholderTextColor="#94A3B8"
+                    />
+                  </>
+                )}
+
+                {seg.mode === "Marítimo" && (
+                  <Text style={[styles.smallLabel, { color: "#991B1B" }]}>
+                    Marítimo solo se calcula por valor tonelada-km o valor
+                    tonelada-ruta.
+                  </Text>
+                )}
+
+                <View style={styles.inlineButtons}>
+                  <TouchableOpacity
+                    style={styles.smallButton}
+                    onPress={() => removeSegment(index)}
+                  >
+                    <Text style={styles.smallButtonText}>Eliminar</Text>
                   </TouchableOpacity>
-                ))}
-              </ScrollView>
-
-              <Text style={styles.smallLabel}>Distancia (km)</Text>
-              <TextInput
-                style={styles.input}
-                value={formatNumberInput(seg.distance)}
-                keyboardType="numeric"
-                onChangeText={(text) =>
-                  updateSegment(index, "distance", sanitizeNumericInput(text))
-                }
-                placeholder="0"
-                placeholderTextColor="#94A3B8"
-              />
-
-              <View style={styles.inlineButtons}>
-                <TouchableOpacity
-                  style={styles.smallButton}
-                  onPress={() => removeSegment(index)}
-                >
-                  <Text style={styles.smallButtonText}>Eliminar</Text>
-                </TouchableOpacity>
+                </View>
               </View>
-            </View>
-          ))}
+            );
+          })}
 
           <TouchableOpacity style={styles.buttonSecondary} onPress={addSegment}>
             <Text style={styles.buttonSecondaryText}>Agregar tramo</Text>
@@ -473,7 +910,9 @@ export default function FormScreen({
 
         <View style={[styles.card, styles.halfCard]}>
           <Text style={styles.label}>Valor m² del proyecto</Text>
-          <Text style={styles.value}>{formatCOP(calc?.valueM2Project || 0)}</Text>
+          <Text style={styles.value}>
+            {formatCOP(calc?.valueM2Project || 0)}
+          </Text>
         </View>
       </View>
 
@@ -489,11 +928,17 @@ export default function FormScreen({
       )}
 
       <View style={styles.rowActions}>
-        <TouchableOpacity style={styles.buttonThird} onPress={() => setView("ctv")}>
+        <TouchableOpacity
+          style={styles.buttonThird}
+          onPress={() => setView("ctv")}
+        >
           <Text style={styles.buttonText}>CTV</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.buttonThird} onPress={() => setView("estudio")}>
+        <TouchableOpacity
+          style={styles.buttonThird}
+          onPress={() => setView("estudio")}
+        >
           <Text style={styles.buttonText}>Estudio</Text>
         </TouchableOpacity>
 

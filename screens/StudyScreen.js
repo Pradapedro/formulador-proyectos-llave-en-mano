@@ -44,7 +44,11 @@ function buildProjectTableRows(form, calc) {
       : 0;
 
   return [
-    ["Identificación del proyecto", "Nombre del proyecto", form?.projectName || "-"],
+    [
+      "Identificación del proyecto",
+      "Nombre del proyecto",
+      form?.projectName || "-",
+    ],
     ["", "Municipio", form?.municipality || "-"],
     ["", "Departamento", form?.department || "-"],
     ["", "Región", calc?.region || "-"],
@@ -52,14 +56,22 @@ function buildProjectTableRows(form, calc) {
     ["", "Tipología", calc?.normalizedTypology || form?.typology || "-"],
     ["", "Tipo de intervención", form?.intervention || "-"],
 
-    ["Dimensionamiento del proyecto", "Área del proyecto", formatArea(calc?.area)],
+    [
+      "Dimensionamiento del proyecto",
+      "Área del proyecto",
+      formatArea(calc?.area),
+    ],
     ["", "Área urbanismo", formatArea(calc?.urbanArea)],
     ["", "Relación urbanismo / área proyecto", percent(relationUrbanism)],
 
     [
       "Parámetros técnicos unitarios",
       "Valor m² estudios y diseños",
-      `${formatCOP(calc?.studiesM2)}/m²`,
+      `${formatCOP(calc?.studiesM2)}/m²${
+        form?.studyMode === "minimo"
+          ? " (valor mínimo aplicado)"
+          : " (automático por zona)"
+      }`,
     ],
     ["", "Valor m² construcción", `${formatCOP(calc?.constructionM2)}/m²`],
     ["", "Valor m² urbanismo", `${formatCOP(calc?.urbanismM2)}/m²`],
@@ -79,7 +91,11 @@ function buildProjectTableRows(form, calc) {
         : "No aplica",
     ],
 
-    ["Costos por componente", "Valor estudios y diseños", formatCOP(calc?.studies)],
+    [
+      "Costos por componente",
+      "Valor estudios y diseños",
+      formatCOP(calc?.studies),
+    ],
     ["", "Valor construcción", formatCOP(calc?.construction)],
     ["", "Valor urbanismo", formatCOP(calc?.urbanism)],
     ["", "Valor infraestructura complementaria", formatCOP(calc?.infra)],
@@ -96,16 +112,64 @@ function buildProjectTableRows(form, calc) {
       `${formatCOP(valueM2ConstructionWithComponents)}/m²`,
     ],
 
-    ["Costos de control y gestión", "% interventoría estudios y diseños", percent(calc?.pctEyD)],
-    ["", "Valor interventoría estudios y diseños", formatCOP(calc?.interventoriaEyD)],
-    ["", "% interventoría de obra", percent(calc?.pctObra)],
+    [
+      "Costos de control y gestión",
+      "% interventoría estudios y diseños",
+      `${percent(calc?.pctEyD)}${
+        form?.eydInterventoriaMode === "manual"
+          ? " (manual)"
+          : " (automático por zona)"
+      }`,
+    ],
+    [
+      "",
+      "Valor interventoría estudios y diseños",
+      formatCOP(calc?.interventoriaEyD),
+    ],
+    [
+      "",
+      "% interventoría de obra",
+      `${percent(calc?.pctObra)}${
+        form?.obraInterventoriaMode === "manual"
+          ? " (manual)"
+          : " (automático por zona)"
+      }`,
+    ],
     ["", "Valor interventoría de obra", formatCOP(calc?.interventoriaObra)],
 
-    ["Costos logísticos", "Sobrecosto logístico", formatCOP(calc?.logisticCost)],
-    ["", "% sobrecosto logístico", percent(calc?.logisticPct)],
+    [
+      "Costos logísticos",
+      "Peso base logístico",
+      `${Number(calc?.logisticBaseWeightTon || 0).toLocaleString("es-CO")} ton`,
+    ],
+    [
+      "",
+      "Peso total logístico",
+      `${Number(calc?.logisticWeightTon || 0).toLocaleString("es-CO")} ton`,
+    ],
+    [
+      "",
+      "Sobrecosto logístico obra base",
+      formatCOP(calc?.logisticCostBase || 0),
+    ],
+    [
+      "",
+      "Sobrecosto logístico sistema fotovoltaico",
+      formatCOP(calc?.logisticCostFv || 0),
+    ],
+    ["", "Sobrecosto logístico total", formatCOP(calc?.logisticCost)],
+    ["", "% sobrecosto logístico equivalente", percent(calc?.logisticPct)],
 
-    ["Resultado financiero del proyecto", "Valor total del proyecto", formatCOP(calc?.totalProject)],
-    ["", "Valor promedio del proyecto", `${formatCOP(calc?.valueM2Project)}/m²`],
+    [
+      "Resultado financiero del proyecto",
+      "Valor total del proyecto",
+      formatCOP(calc?.totalProject),
+    ],
+    [
+      "",
+      "Valor promedio del proyecto",
+      `${formatCOP(calc?.valueM2Project)}/m²`,
+    ],
   ];
 }
 
@@ -114,8 +178,12 @@ function renderProjectTable(styles, rows) {
     <ScrollView horizontal showsHorizontalScrollIndicator>
       <View style={styles.ctvVerticalTable}>
         <View style={styles.ctvVerticalHeader}>
-          <Text style={[styles.ctvVerticalHeadText, { flex: 1.35 }]}>Grupo</Text>
-          <Text style={[styles.ctvVerticalHeadText, { flex: 1.45 }]}>Concepto</Text>
+          <Text style={[styles.ctvVerticalHeadText, { flex: 1.35 }]}>
+            Grupo
+          </Text>
+          <Text style={[styles.ctvVerticalHeadText, { flex: 1.45 }]}>
+            Concepto
+          </Text>
           <Text style={[styles.ctvVerticalHeadText, { flex: 1.8 }]}>Valor</Text>
         </View>
 
@@ -131,7 +199,9 @@ function renderProjectTable(styles, rows) {
                   { flex: 1.35 },
                 ]}
               >
-                <Text style={styles.ctvVerticalSectionText}>{section || ""}</Text>
+                <Text style={styles.ctvVerticalSectionText}>
+                  {section || ""}
+                </Text>
               </View>
 
               <View
@@ -161,6 +231,42 @@ function renderProjectTable(styles, rows) {
   );
 }
 
+function buildLogisticNarrative(activeCalc) {
+  if (!activeCalc?.segmentResults || activeCalc.segmentResults.length === 0) {
+    return "";
+  }
+
+  return activeCalc.segmentResults
+    .map((seg, index) => {
+      if (seg.calculationMode === "vr_ton_km") {
+        return `Tramo ${index + 1}: ${seg.mode}, ${Number(
+          seg.distance || 0
+        ).toLocaleString(
+          "es-CO"
+        )} km, calculado por valor tonelada-km con una tarifa de ${formatCOP(
+          seg.unitValue
+        )} y un costo estimado de ${formatCOP(seg.cost)}.`;
+      }
+
+      if (seg.calculationMode === "vr_ton_ruta") {
+        return `Tramo ${index + 1}: ${
+          seg.mode
+        }, calculado por valor tonelada-ruta con una tarifa de ${formatCOP(
+          seg.unitValue
+        )} y un costo estimado de ${formatCOP(seg.cost)}.`;
+      }
+
+      return `Tramo ${index + 1}: ${seg.mode}, ${Number(
+        seg.distance || 0
+      ).toLocaleString(
+        "es-CO"
+      )} km, calculado automáticamente por porcentaje, con una incidencia de ${percent(
+        seg.pct
+      )} y un costo estimado de ${formatCOP(seg.cost)}.`;
+    })
+    .join(" ");
+}
+
 export default function StudyScreen({
   styles,
   form,
@@ -173,19 +279,26 @@ export default function StudyScreen({
 }) {
   if (!calc) {
     return (
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+      >
         <Text style={styles.title}>Redacción del estudio</Text>
 
         <View style={styles.docBox}>
           <Text style={styles.docTitle}>Resultado</Text>
           <Text style={styles.docText}>
-            No fue posible construir el estudio del proyecto. Verifica que la información
-            del formulario esté completa y que el motor de cálculo esté correctamente conectado.
+            No fue posible construir el estudio del proyecto. Verifica que la
+            información del formulario esté completa y que el motor de cálculo
+            esté correctamente conectado.
           </Text>
         </View>
 
         <View style={styles.rowActions}>
-          <TouchableOpacity style={styles.buttonHalf} onPress={() => setView("inicio")}>
+          <TouchableOpacity
+            style={styles.buttonHalf}
+            onPress={() => setView("inicio")}
+          >
             <Text style={styles.buttonText}>Volver</Text>
           </TouchableOpacity>
         </View>
@@ -211,6 +324,12 @@ export default function StudyScreen({
   const totalConstructionWithComponents = Number(
     activeCalc?.subtotalConstructivo || 0
   );
+
+  const municipalityText =
+    activeForm?.municipality?.trim() || "municipio no definido";
+  const departmentText =
+    activeForm?.department?.trim() || "departamento no definido";
+  const logisticNarrative = buildLogisticNarrative(activeCalc);
 
   const handleExportStudyPdf = async () => {
     try {
@@ -246,40 +365,50 @@ export default function StudyScreen({
       <View style={styles.docBox}>
         <Text style={styles.docTitle}>11.1 Base metodológica</Text>
         <Text style={styles.docText}>
-          Los valores unitarios, coeficientes, porcentajes y parámetros de cálculo aplicados al presente
-          ejercicio corresponden a una metodología paramétrica construida a partir del análisis de 482
-          proyectos viabilizados por la Subdirección de Infraestructura en Salud del Ministerio de Salud
-          y Protección Social. En consecuencia, el resultado obtenido constituye una aproximación técnica
-          de referencia para formulación preliminar, comparación sectorial y análisis inicial de viabilidad.
+          Los valores unitarios, coeficientes, porcentajes y parámetros de
+          cálculo aplicados al presente ejercicio corresponden a una metodología
+          paramétrica construida a partir del análisis de proyectos viabilizados
+          por la Subdirección de Infraestructura en Salud del Ministerio de
+          Salud y Protección Social. En consecuencia, el resultado obtenido
+          constituye una aproximación técnica de referencia para formulación
+          preliminar, comparación sectorial y análisis inicial de viabilidad.
         </Text>
         <Text style={[styles.docText, { marginTop: 10 }]}>
-          La lógica del modelo consiste en asociar variables del proyecto con referencias de costo
-          unitario y coeficientes de administración técnica, a partir de atributos como localización
-          territorial, región, zona logística, tipología y alcance de intervención. Sobre esa base se
-          estiman los componentes de consultoría, construcción, urbanismo, infraestructura complementaria,
-          sistema fotovoltaico, interventorías e incidencias logísticas, hasta consolidar un valor total
-          preliminar del proyecto.
+          La lógica del modelo consiste en asociar variables del proyecto con
+          referencias de costo unitario y coeficientes de administración
+          técnica, a partir de atributos como localización territorial, región,
+          zona logística, tipología y alcance de intervención. Sobre esa base se
+          estiman los componentes de consultoría, construcción, urbanismo,
+          infraestructura complementaria, sistema fotovoltaico, interventorías e
+          incidencias logísticas, hasta consolidar un valor total preliminar del
+          proyecto.
         </Text>
       </View>
 
       <View style={styles.docBox}>
         <Text style={styles.docTitle}>11.2 Información del proyecto</Text>
         <Text style={styles.docText}>
-          El ejercicio corresponde al proyecto “{activeForm.projectName}”, localizado en el municipio de
-          {` ${activeForm.municipality}`}, departamento de {` ${activeForm.department}`}. Conforme a la
-          clasificación territorial adoptada, el proyecto se ubica en la región {` ${activeCalc.region}`},
-          dentro de la zona logística {` ${activeCalc.zone}`}.
+          El ejercicio corresponde al proyecto "{activeForm.projectName}",
+          localizado en el municipio de {municipalityText}, departamento de{" "}
+          {departmentText}. Conforme a la clasificación territorial adoptada, el
+          proyecto se ubica en la región {activeCalc.region}, dentro de la zona
+          logística {activeCalc.zone}.
         </Text>
         <Text style={[styles.docText, { marginTop: 10 }]}>
-          La tipología seleccionada corresponde a {` ${normalizedTypology}`} y el
-          tipo de intervención es {` ${activeForm.intervention}`}. El área base de la edificación principal
-          es de {` ${formatArea(activeCalc.area)}`} y el componente de urbanismo asociado corresponde a
-          {` ${formatArea(activeCalc.urbanArea)}`}.{" "}
+          La tipología seleccionada corresponde a {` ${normalizedTypology}`} y
+          el tipo de intervención es {` ${activeForm.intervention}`}. El área
+          base de la edificación principal es de{" "}
+          {` ${formatArea(activeCalc.area)}`} y el componente de urbanismo
+          asociado corresponde a{` ${formatArea(activeCalc.urbanArea)}`}.{" "}
           {Number(activeCalc.infraArea || 0) > 0
-            ? `Se incorporan ${formatArea(activeCalc.infraArea)} de infraestructura complementaria.`
+            ? `Se incorporan ${formatArea(
+                activeCalc.infraArea
+              )} de infraestructura complementaria.`
             : "No se incorporan áreas de infraestructura complementaria."}{" "}
           {activeForm.fvType && activeForm.fvType !== "No aplica"
-            ? `Se contempla un sistema fotovoltaico tipo ${activeForm.fvType} con cobertura del ${formatPlain(activeCalc.fvCoverage)}%.`
+            ? `Se contempla un sistema fotovoltaico tipo ${
+                activeForm.fvType
+              } con cobertura del ${formatPlain(activeCalc.fvCoverage)}%.`
             : "No se contempla sistema fotovoltaico en el presente ejercicio."}
         </Text>
       </View>
@@ -287,56 +416,111 @@ export default function StudyScreen({
       <View style={styles.docBox}>
         <Text style={styles.docTitle}>11.3 Metodología de cálculo</Text>
 
-        <Text style={styles.docText}>
+        <Text style={[styles.docText, { marginTop: 10 }]}>
           <Text style={styles.docBold}>Estudios y diseños. </Text>
-          Se obtiene multiplicando el área del proyecto por el valor unitario de referencia del componente:
-          {` ${formatArea(activeCalc.area)} × ${formatCOP(activeCalc.studiesM2)}/m² = ${formatCOP(activeCalc.studies)}.`}
+          {activeForm?.studyMode === "minimo"
+            ? "Para el presente ejercicio se aplicó el valor mínimo definido para estudios y diseños, correspondiente a $160.000/m². "
+            : "Se obtiene multiplicando el área del proyecto por el valor unitario de referencia del componente según la zona del proyecto. "}
+          {` ${formatArea(activeCalc.area)} × ${formatCOP(
+            activeCalc.studiesM2
+          )}/m² = ${formatCOP(activeCalc.studies)}.`}
         </Text>
 
         <Text style={[styles.docText, { marginTop: 10 }]}>
-          <Text style={styles.docBold}>Interventoría de estudios y diseños. </Text>
-          Se calcula aplicando el {percent(activeCalc.pctEyD)} sobre el valor de estudios y diseños:
-          {` ${formatCOP(activeCalc.studies)} × ${percent(activeCalc.pctEyD)} = ${formatCOP(activeCalc.interventoriaEyD)}.`}
+          <Text style={styles.docBold}>
+            Interventoría de estudios y diseños.{" "}
+          </Text>
+          {activeForm?.eydInterventoriaMode === "manual"
+            ? `Para el presente ejercicio se aplicó manualmente un porcentaje de ${percent(
+                activeCalc.pctEyD
+              )} sobre el valor de estudios y diseños. `
+            : `Se calcula aplicando el porcentaje automático por zona de ${percent(
+                activeCalc.pctEyD
+              )} sobre el valor de estudios y diseños. `}
+          {` ${formatCOP(activeCalc.studies)} × ${percent(
+            activeCalc.pctEyD
+          )} = ${formatCOP(activeCalc.interventoriaEyD)}.`}
         </Text>
 
         <Text style={[styles.docText, { marginTop: 10 }]}>
           <Text style={styles.docBold}>Construcción. </Text>
-          Se estima mediante el producto entre el área principal y el valor unitario de construcción:
-          {` ${formatArea(activeCalc.area)} × ${formatCOP(activeCalc.constructionM2)}/m² = ${formatCOP(activeCalc.construction)}.`}
+          Se estima mediante el producto entre el área principal y el valor
+          unitario de construcción:
+          {` ${formatArea(activeCalc.area)} × ${formatCOP(
+            activeCalc.constructionM2
+          )}/m² = ${formatCOP(activeCalc.construction)}.`}
         </Text>
 
         <Text style={[styles.docText, { marginTop: 10 }]}>
           <Text style={styles.docBold}>Urbanismo. </Text>
-          Se calcula con base en el área de urbanismo y su valor unitario de referencia:
-          {` ${formatArea(activeCalc.urbanArea)} × ${formatCOP(activeCalc.urbanismM2)}/m² = ${formatCOP(activeCalc.urbanism)}.`}
+          Se calcula con base en el área de urbanismo y su valor unitario de
+          referencia:
+          {` ${formatArea(activeCalc.urbanArea)} × ${formatCOP(
+            activeCalc.urbanismM2
+          )}/m² = ${formatCOP(activeCalc.urbanism)}.`}
         </Text>
 
         <Text style={[styles.docText, { marginTop: 10 }]}>
           <Text style={styles.docBold}>Infraestructura complementaria. </Text>
           {Number(activeCalc.infraArea || 0) > 0
-            ? `Se calcula con base en ${formatArea(activeCalc.infraArea)} y un valor unitario de ${formatCOP(activeCalc.infraM2)}/m², para un total de ${formatCOP(activeCalc.infra)}.`
-            : `No aplica en el presente ejercicio, por lo que el valor estimado es ${formatCOP(activeCalc.infra)}.`}
+            ? `Se calcula con base en ${formatArea(
+                activeCalc.infraArea
+              )} y un valor unitario de ${formatCOP(
+                activeCalc.infraM2
+              )}/m², para un total de ${formatCOP(activeCalc.infra)}.`
+            : `No aplica en el presente ejercicio, por lo que el valor estimado es ${formatCOP(
+                activeCalc.infra
+              )}.`}
         </Text>
 
         <Text style={[styles.docText, { marginTop: 10 }]}>
           <Text style={styles.docBold}>Sistema fotovoltaico. </Text>
           {activeForm.fvType && activeForm.fvType !== "No aplica"
-            ? `Se adopta un valor unitario base de ${formatCOP(activeCalc.fvM2Base)}/m² y una cobertura del ${formatPlain(activeCalc.fvCoverage)}%. El valor resultante del componente asciende a ${formatCOP(activeCalc.fv)}.`
-            : `No aplica en el presente ejercicio, por lo que el valor estimado es ${formatCOP(activeCalc.fv)}.`}
+            ? `Se adopta un valor unitario base de ${formatCOP(
+                activeCalc.fvM2Base
+              )}/m² y una cobertura del ${formatPlain(
+                activeCalc.fvCoverage
+              )}%. El valor resultante del componente asciende a ${formatCOP(
+                activeCalc.fv
+              )}.`
+            : `No aplica en el presente ejercicio, por lo que el valor estimado es ${formatCOP(
+                activeCalc.fv
+              )}.`}
         </Text>
 
         <Text style={[styles.docText, { marginTop: 10 }]}>
           <Text style={styles.docBold}>Interventoría de obra. </Text>
-          Se aplica el {percent(activeCalc.pctObra)} sobre el subtotal constructivo integrado por
-          construcción, urbanismo, infraestructura complementaria y sistema fotovoltaico. El subtotal es de
-          {` ${formatCOP(totalConstructionWithComponents)}`}, por lo que la interventoría de obra es de
+          {activeForm?.obraInterventoriaMode === "manual"
+            ? `Para el presente ejercicio se aplicó manualmente un porcentaje de ${percent(
+                activeCalc.pctObra
+              )} sobre el subtotal constructivo. `
+            : `Se aplica el porcentaje automático por zona de ${percent(
+                activeCalc.pctObra
+              )} sobre el subtotal constructivo. `}
+          El subtotal está integrado por construcción, urbanismo,
+          infraestructura complementaria y sistema fotovoltaico. El subtotal es
+          de
+          {` ${formatCOP(totalConstructionWithComponents)}`}, por lo que la
+          interventoría de obra es de
           {` ${formatCOP(activeCalc.interventoriaObra)}.`}
         </Text>
 
         <Text style={[styles.docText, { marginTop: 10 }]}>
           <Text style={styles.docBold}>Sobrecosto logístico. </Text>
-          {Number(activeCalc.logisticPct || 0) > 0
-            ? `Se aplica un sobrecosto logístico del ${percent(activeCalc.logisticPct)}, equivalente a ${formatCOP(activeCalc.logisticCost)}.`
+          {Number(activeCalc.logisticCost || 0) > 0
+            ? `El componente logístico se calculó por tramos de transporte. Para la obra base se obtuvo un costo logístico de ${formatCOP(
+                activeCalc.logisticCostBase || 0
+              )}, equivalente a un porcentaje logístico de ${percent(
+                activeCalc.logisticPct || 0
+              )}. Ese mismo porcentaje equivalente se aplicó automáticamente al sistema fotovoltaico, generando un costo logístico adicional de ${formatCOP(
+                activeCalc.logisticCostFv || 0
+              )}. El peso logístico base estimado del proyecto corresponde a ${Number(
+                activeCalc.logisticBaseWeightTon || 0
+              ).toLocaleString(
+                "es-CO"
+              )} toneladas. ${logisticNarrative} En consecuencia, el costo logístico total asciende a ${formatCOP(
+                activeCalc.logisticCost
+              )}.`
             : "No se aplica sobrecosto logístico, por cuanto el ejercicio no incorpora incidencias adicionales de transporte especial o condiciones extraordinarias de acceso."}
         </Text>
       </View>
@@ -344,36 +528,46 @@ export default function StudyScreen({
       <View style={styles.docBox}>
         <Text style={styles.docTitle}>11.4 Soporte metodológico</Text>
         <Text style={styles.docText}>
-          El modelo aplicado tiene carácter paramétrico y debe entenderse como una herramienta de
-          estimación preliminar. En consecuencia, sus resultados son útiles para orientar la estructuración
-          inicial del proyecto, establecer órdenes de magnitud presupuestal y soportar ejercicios
-          comparativos dentro del sector salud.
+          El modelo aplicado tiene carácter paramétrico y debe entenderse como
+          una herramienta de estimación preliminar. En consecuencia, sus
+          resultados son útiles para orientar la estructuración inicial del
+          proyecto, establecer órdenes de magnitud presupuestal y soportar
+          ejercicios comparativos dentro del sector salud.
         </Text>
         <Text style={[styles.docText, { marginTop: 10 }]}>
-          No obstante, el valor obtenido no sustituye el presupuesto detallado del proyecto. En etapas
-          posteriores deberá ser ajustado con base en estudios y diseños definitivos, memorias de cálculo,
-          especificaciones técnicas, cantidades de obra, análisis de precios unitarios y demás soportes
-          propios de la fase de factibilidad o ejecución.
+          No obstante, el valor obtenido no sustituye el presupuesto detallado
+          del proyecto. En etapas posteriores deberá ser ajustado con base en
+          estudios y diseños definitivos, memorias de cálculo, especificaciones
+          técnicas, cantidades de obra, análisis de precios unitarios y demás
+          soportes propios de la fase de factibilidad o ejecución.
         </Text>
       </View>
 
       <View style={styles.docBox}>
-        <Text style={styles.docTitle}>11.5 Resultado del cálculo de componentes</Text>
+        <Text style={styles.docTitle}>
+          11.5 Resultado del cálculo de componentes
+        </Text>
         <Text style={styles.docText}>
-          El ejercicio arroja un costo directo predominante en la edificación principal, complementado por
-          urbanismo
+          El ejercicio arroja un costo directo predominante en la edificación
+          principal, complementado por urbanismo
           {activeForm.fvType && activeForm.fvType !== "No aplica"
             ? " y por la incorporación del sistema fotovoltaico como componente de sostenibilidad energética."
             : "."}{" "}
-          La estructura del presupuesto muestra un peso principal en construcción, seguido por urbanismo,
-          {activeForm.fvType && activeForm.fvType !== "No aplica" ? " sistema fotovoltaico," : ""}{" "}
+          La estructura del presupuesto muestra un peso principal en
+          construcción, seguido por urbanismo,
+          {activeForm.fvType && activeForm.fvType !== "No aplica"
+            ? " sistema fotovoltaico,"
+            : ""}{" "}
           interventoría de obra y consultoría.
         </Text>
         <Text style={[styles.docText, { marginTop: 10 }]}>
-          Desde la perspectiva técnica, la configuración del presupuesto es coherente con un proyecto de
-          {` ${String(activeForm.intervention || "-").toLowerCase()}`} para la tipología
-          {` ${normalizedTypology}`}, en el que la mayor incidencia económica está
-          concentrada en la infraestructura física principal y su habilitación funcional.
+          Desde la perspectiva técnica, la configuración del presupuesto es
+          coherente con un proyecto de
+          {` ${String(activeForm.intervention || "-").toLowerCase()}`} para la
+          tipología
+          {` ${normalizedTypology}`}, en el que la mayor incidencia económica
+          está concentrada en la infraestructura física principal y su
+          habilitación funcional.
         </Text>
       </View>
 
@@ -384,11 +578,14 @@ export default function StudyScreen({
       <View style={styles.docBox}>
         <Text style={styles.docTitle}>12.1 Presupuesto consolidado</Text>
         <Text style={styles.docText}>
-          El presupuesto consolidado del proyecto asciende a {formatCOP(activeCalc.totalProject)}, valor
-          que incluye consultoría, construcción, urbanismo,
-          {activeForm.fvType && activeForm.fvType !== "No aplica" ? " sistema fotovoltaico," : ""}{" "}
+          El presupuesto consolidado del proyecto asciende a{" "}
+          {formatCOP(activeCalc.totalProject)}, valor que incluye consultoría,
+          construcción, urbanismo,
+          {activeForm.fvType && activeForm.fvType !== "No aplica"
+            ? " sistema fotovoltaico,"
+            : ""}{" "}
           interventoría de estudios y diseños, interventoría de obra
-          {Number(activeCalc.logisticPct || 0) > 0
+          {Number(activeCalc.logisticCost || 0) > 0
             ? " y sobrecosto logístico."
             : " y ausencia de sobrecosto logístico."}
         </Text>
@@ -401,75 +598,138 @@ export default function StudyScreen({
       <View style={styles.docBox}>
         <Text style={styles.docTitle}>12.2 Resumen presupuestal</Text>
         <Text style={styles.docText}>
-          El total de consultoría es de <Text style={styles.docBold}>{formatCOP(activeCalc.totalConsulting)}</Text>.
+          El total de consultoría es de{" "}
+          <Text style={styles.docBold}>
+            {formatCOP(activeCalc.totalConsulting)}
+          </Text>
+          .
         </Text>
         <Text style={styles.docText}>
-          El total del componente constructivo es de <Text style={styles.docBold}>{formatCOP(activeCalc.totalConstruction)}</Text>.
+          El total del componente constructivo es de{" "}
+          <Text style={styles.docBold}>
+            {formatCOP(activeCalc.totalConstruction)}
+          </Text>
+          .
         </Text>
         <Text style={styles.docText}>
           La construcción más interventoría de obra asciende a{" "}
-          <Text style={styles.docBold}>{formatCOP(activeCalc.totalConstructionPlusInterventoria)}</Text>.
+          <Text style={styles.docBold}>
+            {formatCOP(activeCalc.totalConstructionPlusInterventoria)}
+          </Text>
+          .
         </Text>
         <Text style={styles.docText}>
-          El sobrecosto logístico corresponde a <Text style={styles.docBold}>{formatCOP(activeCalc.logisticCost)}</Text>.
+          El sobrecosto logístico de la obra base corresponde a{" "}
+          <Text style={styles.docBold}>
+            {formatCOP(activeCalc.logisticCostBase || 0)}
+          </Text>
+          .
         </Text>
         <Text style={styles.docText}>
-          El valor total del proyecto es de <Text style={styles.docBold}>{formatCOP(activeCalc.totalProject)}</Text>.
+          El sobrecosto logístico del sistema fotovoltaico corresponde a{" "}
+          <Text style={styles.docBold}>
+            {formatCOP(activeCalc.logisticCostFv || 0)}
+          </Text>
+          .
         </Text>
         <Text style={styles.docText}>
-          El área del proyecto es de <Text style={styles.docBold}>{formatArea(activeCalc.area)}</Text> y
-          el valor promedio del proyecto corresponde a{" "}
-          <Text style={styles.docBold}>{formatCOP(activeCalc.valueM2Project)}/m²</Text>.
+          El sobrecosto logístico total corresponde a{" "}
+          <Text style={styles.docBold}>
+            {formatCOP(activeCalc.logisticCost)}
+          </Text>
+          .
+        </Text>
+        <Text style={styles.docText}>
+          El valor total del proyecto es de{" "}
+          <Text style={styles.docBold}>
+            {formatCOP(activeCalc.totalProject)}
+          </Text>
+          .
+        </Text>
+        <Text style={styles.docText}>
+          El área del proyecto es de{" "}
+          <Text style={styles.docBold}>{formatArea(activeCalc.area)}</Text> y el
+          valor promedio del proyecto corresponde a{" "}
+          <Text style={styles.docBold}>
+            {formatCOP(activeCalc.valueM2Project)}/m²
+          </Text>
+          .
         </Text>
       </View>
 
       <View style={styles.docBox}>
-        <Text style={styles.docTitle}>13. Análisis del resultado presupuestal del proyecto</Text>
+        <Text style={styles.docTitle}>
+          13. Análisis del resultado presupuestal del proyecto
+        </Text>
 
         <Text style={styles.docText}>
           <Text style={styles.docBold}>13.1 Valor m² del proyecto. </Text>
-          El resultado presupuestal obtenido ubica el proyecto en un valor promedio de{" "}
-          {formatCOP(activeCalc.valueM2Project)}/m², indicador que integra no solo el costo de la
-          edificación principal, sino también los costos asociados de consultoría, urbanismo,
-          {activeForm.fvType && activeForm.fvType !== "No aplica" ? " sistema fotovoltaico," : ""}{" "}
+          El resultado presupuestal obtenido ubica el proyecto en un valor
+          promedio de {formatCOP(activeCalc.valueM2Project)}/m², indicador que
+          integra no solo el costo de la edificación principal, sino también los
+          costos asociados de consultoría, urbanismo,
+          {activeForm.fvType && activeForm.fvType !== "No aplica"
+            ? " sistema fotovoltaico,"
+            : ""}{" "}
           interventorías
-          {Number(activeCalc.logisticPct || 0) > 0 ? " y sobrecosto logístico." : "."}
+          {Number(activeCalc.logisticCost || 0) > 0
+            ? " y sobrecosto logístico."
+            : "."}
         </Text>
 
         <Text style={[styles.docText, { marginTop: 10 }]}>
-          <Text style={styles.docBold}>13.2 Interpretación técnica del resultado. </Text>
-          Desde el punto de vista técnico, el comportamiento del presupuesto es consistente con una
-          intervención de {String(activeForm.intervention || "-").toLowerCase()} para un
+          <Text style={styles.docBold}>
+            13.2 Interpretación técnica del resultado.{" "}
+          </Text>
+          Desde el punto de vista técnico, el comportamiento del presupuesto es
+          consistente con una intervención de{" "}
+          {String(activeForm.intervention || "-").toLowerCase()} para un
           {` ${normalizedTypology}`} en la región {` ${activeCalc.region}`},
-          {Number(activeCalc.logisticPct || 0) > 0
-            ? ` con una penalización logística del ${percent(activeCalc.logisticPct)}.`
+          {Number(activeCalc.logisticCost || 0) > 0
+            ? ` con una incidencia logística equivalente del ${percent(
+                activeCalc.logisticPct
+              )}, aplicada a la obra base y trasladada automáticamente al sistema fotovoltaico.`
             : " sin penalización logística adicional."}
         </Text>
 
         <Text style={[styles.docText, { marginTop: 10 }]}>
-          <Text style={styles.docBold}>13.3 Coherencia con el mercado de infraestructura en salud. </Text>
-          La distribución del presupuesto guarda coherencia con el comportamiento esperado del mercado de
-          infraestructura en salud, en tanto la construcción representa el mayor peso dentro del costo
-          total, seguida por urbanismo
-          {activeForm.fvType && activeForm.fvType !== "No aplica" ? ", sistema fotovoltaico" : ""}{" "}
-          e interventorías. Ello se alinea con la lógica de formulación de proyectos comparables dentro del
-          sector.
+          <Text style={styles.docBold}>
+            13.3 Coherencia con el mercado de infraestructura en salud.{" "}
+          </Text>
+          La distribución del presupuesto guarda coherencia con el
+          comportamiento esperado del mercado de infraestructura en salud, en
+          tanto la construcción representa el mayor peso dentro del costo total,
+          seguida por urbanismo
+          {activeForm.fvType && activeForm.fvType !== "No aplica"
+            ? ", sistema fotovoltaico"
+            : ""}{" "}
+          e interventorías. Ello se alinea con la lógica de formulación de
+          proyectos comparables dentro del sector.
         </Text>
 
         <Text style={[styles.docText, { marginTop: 10 }]}>
-          <Text style={styles.docBold}>13.4 Alcance del ejercicio paramétrico. </Text>
-          El presente resultado corresponde a una estimación paramétrica de referencia y no sustituye el
-          presupuesto detallado del proyecto. Por consiguiente, deberá ser ajustado en etapas posteriores
-          mediante estudios y diseños definitivos, memorias de cálculo, especificaciones técnicas,
-          cantidades de obra y análisis de precios unitarios.
+          <Text style={styles.docBold}>
+            13.4 Alcance del ejercicio paramétrico.{" "}
+          </Text>
+          El presente resultado corresponde a una estimación paramétrica de
+          referencia y no sustituye el presupuesto detallado del proyecto. Por
+          consiguiente, deberá ser ajustado en etapas posteriores mediante
+          estudios y diseños definitivos, memorias de cálculo, especificaciones
+          técnicas, cantidades de obra y análisis de precios unitarios.
         </Text>
 
         {hasOptimization && (
           <Text style={[styles.docText, { marginTop: 10 }]}>
-            Adicionalmente, el ejercicio incluyó un proceso de ajuste por valor techo. Como resultado, el
-            escenario final adoptado por la herramienta corresponde a un valor total de{" "}
-            <Text style={styles.docBold}>{formatCOP(optimizedCalc?.totalProject)}</Text>, con un ahorro
-            estimado de <Text style={styles.docBold}>{formatCOP(calc.optimization.savings)}</Text>{" "}
+            Adicionalmente, el ejercicio incluyó un proceso de ajuste por valor
+            techo. Como resultado, el escenario final adoptado por la
+            herramienta corresponde a un valor total de{" "}
+            <Text style={styles.docBold}>
+              {formatCOP(optimizedCalc?.totalProject)}
+            </Text>
+            , con un ahorro estimado de{" "}
+            <Text style={styles.docBold}>
+              {formatCOP(calc.optimization.savings)}
+            </Text>{" "}
             frente al escenario base.{" "}
             {optimizedCalc?.capCompliance
               ? "El escenario optimizado cumple el límite presupuestal definido."
@@ -479,11 +739,17 @@ export default function StudyScreen({
       </View>
 
       <View style={styles.rowActions}>
-        <TouchableOpacity style={styles.buttonHalf} onPress={() => setView("inicio")}>
+        <TouchableOpacity
+          style={styles.buttonHalf}
+          onPress={() => setView("inicio")}
+        >
           <Text style={styles.buttonText}>Volver</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.buttonHalf} onPress={handleExportStudyPdf}>
+        <TouchableOpacity
+          style={styles.buttonHalf}
+          onPress={handleExportStudyPdf}
+        >
           <Text style={styles.buttonText}>Exportar PDF</Text>
         </TouchableOpacity>
       </View>
